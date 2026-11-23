@@ -1,95 +1,182 @@
 # ttybar
 
-A tiny macOS menu bar utility for embedded developers: click the icon, see the serial
+A tiny macOS menu bar utility for embedded developers. Click the icon, see the serial
 devices in `/dev` that match your filters, click one to copy its path.
+
+<p align="center">
+  <img src="docs/screenshot.png" width="391" alt="ttybar menu open under its menu bar icon, listing four /dev/tty.* devices">
+</p>
+
+No more `ls /dev/tty.*` before every `screen`, `picocom`, `esptool.py` or `idf.py -p`.
+
+- Lives in the menu bar only: no Dock icon, no window.
+- Rescans `/dev` every time the menu opens, so plugged and unplugged adapters show up
+  immediately.
+- Never opens the devices, so running sessions in other tools are not affected.
+- Glob filters and a mute list to hide the noise (Bluetooth ports, debug consoles).
+- No third-party dependencies, no network access, no special permissions.
 
 ## Requirements
 
-- macOS 26 or later
-- Swift 6.2 (the Xcode Command Line Tools are enough; Xcode is not required)
-- No third-party dependencies
+- macOS 26 or later (Apple silicon or Intel)
+- Swift 6.2 or later. The Xcode Command Line Tools are enough; Xcode is not required.
 
-## Build and test
+Install the Command Line Tools if you do not have them, then check the Swift version:
 
 ```sh
-make build   # debug build of the package
-make test    # unit tests (Swift Testing)
-make app     # release build, assembled and ad-hoc signed as build/ttybar.app
-make run     # make app, quit a running copy, and launch the new one
-make clean   # remove .build and build
+xcode-select --install
+swift --version
 ```
-
-`make test` adds the Command Line Tools search paths for Swift Testing automatically when
-Xcode is not installed.
 
 ## Install
 
+There are no prebuilt binaries yet; ttybar is built from source. It takes a few seconds.
+
 ```sh
-make app
-cp -R build/ttybar.app /Applications/
-open /Applications/ttybar.app
+git clone https://github.com/yuri-saifutdinov/ttybar.git
+cd ttybar
+make install
 ```
 
-The app has no Dock icon and no window; it only adds an icon to the menu bar. To start it
-automatically, add it under System Settings > General > Login Items.
+`make install` builds a release version, ad-hoc signs it for your machine, copies it to
+`/Applications/ttybar.app` and launches it. An icon appears in the menu bar. To install
+somewhere else, pass the directory: `make install INSTALL_DIR=~/Applications`.
+
+To start ttybar at login, add `/Applications/ttybar.app` under
+**System Settings > General > Login Items & Extensions > Open at Login**.
+
+## Update
+
+From the cloned repository:
+
+```sh
+git pull
+make install
+```
+
+`make install` quits the running copy, replaces the app and launches the new one. Filters and mutes are kept across updates, and the login item keeps working because the
+app path does not change.
+
+To see the installed version, right-click the icon and choose **About**, or run:
+
+```sh
+defaults read /Applications/ttybar.app/Contents/Info CFBundleShortVersionString
+```
+
+## Uninstall
+
+1. Right-click the icon and choose **Quit** (or run `pkill -x TTYBar`).
+2. Remove the login item, if you added one.
+3. Delete the app and its settings:
+
+```sh
+rm -rf /Applications/ttybar.app
+defaults delete dev.ttybar.TTYBar
+```
 
 ## Usage
 
-- **Left click** the icon: list of devices in `/dev` that match at least one filter and no
-  mute pattern, rescanned every time the menu opens. Click a device to copy its path; the
-  icon shows a checkmark for a second.
-- **Hold Option** while the list is open: items turn into "Mute <path>". Clicking one adds
-  that exact path to the mute list.
-- **Right click** (or Control-click) the icon: settings popover.
-  - *Filters* and *Muted* are glob patterns matched against the full path
-    (`*`, `?`, `[abc]`, `[a-z]`, `[!a]`, `\` escapes; `*` does not cross `/`; case-sensitive).
-  - Type in a row and press Return to commit, Escape to revert. Clearing a row and pressing
-    Return, or the minus button, removes it. The last row of each list adds a new pattern.
-  - Patterns must start with `/dev/`; invalid ones are marked in red and not applied.
-  - About and Quit are at the bottom.
+| Action | Result |
+| --- | --- |
+| Left click the icon | List of matching devices. Click one to copy its path; the icon shows a checkmark for a second. |
+| Hold Option while the list is open | Items turn into "Mute &lt;path&gt;". Clicking one adds that exact path to the mute list. |
+| Right click (or Control-click) the icon | Settings popover with Filters, Muted, About and Quit. |
 
-Defaults: one filter `/dev/tty.*`, no mutes. Settings live in user defaults
-(`defaults read dev.ttybar.TTYBar`).
+A device is listed when its path matches at least one filter and no mute pattern. The
+copied path has no trailing newline, so it can be pasted straight into a command:
 
-## Manual checklist
+```sh
+picocom -b 115200 $(pbpaste)
+```
 
-UI behavior is not covered by automated tests. Run through this list on `build/ttybar.app`
-after UI changes.
+### Filters and mutes
 
-### Menu bar app
-- [ ] Launch: one icon appears in the menu bar; no Dock icon, no window.
-- [ ] Switch between light and dark appearance: the icon stays legible and monochrome.
-- [ ] Left click opens the device menu.
-- [ ] Right click opens the settings popover.
-- [ ] Control-click opens the settings popover.
-- [ ] Opening the device menu closes the popover, and vice versa.
+Both lists hold glob patterns matched against the full device path:
 
-### Device menu
-- [ ] Plug in an adapter with the menu closed, then open it: the adapter is listed.
-- [ ] Unplug it with the menu closed, then open it: the adapter is gone.
-- [ ] A device opened in another tool (e.g. `screen`) is still listed and the session is unaffected.
-- [ ] Remove all filters: the menu shows the disabled item "No filters — right-click to add".
-- [ ] Use a filter that matches nothing: the menu shows the disabled item "No matching devices".
-- [ ] Devices are sorted with numbers by value (`..._2` before `..._10`).
-- [ ] Click a device: the menu closes and `pbpaste | od -c` shows the path with no trailing newline.
-- [ ] After a copy the icon shows a checkmark for about a second; a second quick copy restarts it.
-- [ ] Hold Option: items read "Mute <path>"; release Option: plain paths again.
-- [ ] Option-click a device: the clipboard is unchanged, the path appears under Muted, and the
-      device is gone the next time the menu opens.
+| Pattern | Matches |
+| --- | --- |
+| `*` | any run of characters except `/` |
+| `?` | any single character except `/` |
+| `[abc]`, `[a-z]`, `[!a]` | one character from (or not from) the set |
+| `\x` | the literal character `x` |
 
-### Settings popover
-- [ ] Right click: the popover appears below the icon with Filters and Muted; clicking outside closes it.
-- [ ] A text field accepts typing right after the popover opens.
-- [ ] Type `/dev/tty.usbmodem*` in the Filters add row, press Return: it is added and a new
-      empty add row appears; the next device menu uses it.
-- [ ] Edit a mute pattern and press Return: it is replaced.
-- [ ] The minus button removes a pattern.
-- [ ] Clear a row and press Return: the pattern is removed.
-- [ ] Change a row and press Escape: the previous text is restored and the popover stays open.
-- [ ] Press Escape in an unchanged row: the popover closes.
-- [ ] Add a pattern that already exists: it is listed once.
-- [ ] Commit `tty.*`: the row is marked red with "Must start with /dev/", the list is unchanged.
-- [ ] Commit `/dev/tty.usb[01` in an existing row: marked red, the old pattern stays in effect.
-- [ ] Commit `  /dev/tty.*  `: stored without surrounding spaces.
-- [ ] About shows the standard panel with "ttybar" and the version, in front of other windows.
-- [ ] Quit removes the icon; after relaunch, filters and mutes (including an empty filter list) are kept.
+Matching is case-sensitive, and every pattern must start with `/dev/`.
+
+Editing in the popover:
+
+- Type in a row and press **Return** to commit, **Escape** to revert.
+- Clear a row and press Return, or click the minus button, to remove it.
+- The last, empty row of each list adds a new pattern.
+- Invalid patterns are marked red and not applied.
+
+Defaults: one filter `/dev/tty.*`, no mutes. Some useful filters:
+
+```text
+/dev/tty.usbmodem*      CDC-ACM boards (most dev kits, CircuitPython, RP2040)
+/dev/tty.usbserial-*    FTDI and similar USB-UART adapters
+/dev/tty.SLAB_USBtoUART CP210x with the Silicon Labs driver
+/dev/tty.wchusbserial*  CH34x adapters
+```
+
+Settings are stored in user defaults under `dev.ttybar.TTYBar`:
+
+```sh
+defaults read dev.ttybar.TTYBar     # show
+defaults delete dev.ttybar.TTYBar   # reset to defaults (quit ttybar first)
+```
+
+## Troubleshooting
+
+**The icon does not appear.** The menu bar may be full and macOS hides items that do not
+fit, especially on notched displays. Quit a few other menu bar apps, or check that ttybar is
+running with `pgrep -x TTYBar`.
+
+**My adapter is not listed.** Check that it shows up with `ls /dev/tty.*`. If it does not,
+the adapter needs a driver. If it does, make sure a filter matches its path and no mute
+pattern does.
+
+**"ttybar.app is damaged" or "cannot be opened" after copying it from another Mac.** The
+app is ad-hoc signed and not notarized, so macOS blocks copies downloaded from elsewhere.
+Build it on the Mac where you run it, or remove the quarantine flag:
+`xattr -dr com.apple.quarantine /Applications/ttybar.app`.
+
+## Development
+
+```sh
+make build   # debug build
+make test    # unit tests (Swift Testing)
+make app     # release build, assembled and ad-hoc signed as build/ttybar.app
+make run     # make app, quit a running copy, launch the new one from build/
+make install # make app, then install to /Applications (or INSTALL_DIR) and launch
+make clean   # remove .build and build
+```
+
+`make test` adds the Swift Testing search paths automatically when only the Command Line
+Tools are installed.
+
+Layout:
+
+- `Sources/TTYBarCore` — UI-free logic: device scanning, glob matching, pattern validation,
+  settings storage. Covered by unit tests in `Tests/TTYBarCoreTests`.
+- `Sources/TTYBar` — the AppKit/SwiftUI app: status item, device menu, settings popover.
+- `Resources/Info.plist` — bundle metadata, including the version.
+- `openspec/` — specifications and change history.
+
+UI behavior is not covered by automated tests; run through
+[docs/manual-checklist.md](docs/manual-checklist.md) after UI changes.
+
+The version lives in two places, `Resources/Info.plist` (`CFBundleShortVersionString`) and
+`Sources/TTYBarCore/Version.swift`; bump both together.
+
+### Contributing
+
+The project uses spec-driven development with [OpenSpec](https://github.com/Fission-AI/OpenSpec).
+Current behavior is specified in `openspec/specs/`. For anything beyond a small fix, start
+with a change proposal in `openspec/changes/` describing the new behavior, then implement it.
+Code, comments, docs and commit messages are in English.
+
+Issues and pull requests are welcome.
+
+## License
+
+[MIT](LICENSE)
